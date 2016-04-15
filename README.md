@@ -85,6 +85,10 @@ initial execution of `redo <list of targets>`.
 If you ever run into issues and just want to rebuild the entire system, remove
 the `.redo` directory and run `redo` again.
 
+## Example
+
+Try out the example code, `redo example`
+
 ## Installation
 
 Easiest way is to just modify install.do and run it with `sh`
