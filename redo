@@ -5,7 +5,7 @@
 #
 # Written by Jeff Parent
 # Released as Public Domain
-# Version: 0.1.0
+# Version: 0.2.0
 # Date: Fri Apr 15 00:26:30 CDT 2016
 
 # Runtime Info
@@ -48,6 +48,11 @@ function CleanSum() {
   do
     [ ! -e "$f" ] || [ "$(cat "$f")" != "$1" ] || rm "$f"
   done
+}
+
+# Clean out all sums for a target :: 1:Target
+function CleanAll() {
+ [ ! -d $METADIR/$1 ] || rm -f $METADIR/$1/*
 }
 
 # Get sum for dep :: 1:Dependency 2:Target -> Sum
@@ -141,6 +146,7 @@ function DoRedo() {
     if [ $changes -eq 1 ]
     then
       msg_ "info" "redo $target"
+      CleanAll "$target"
       GenSum "$doPath" "$target"
       $(PATH=.:$PATH REDO_TARGET="$target" sh -e "$doPath" 0 $(GetBase "$target") "$tmp" > "$tmp")
 

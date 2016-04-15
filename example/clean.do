@@ -1,1 +1,1 @@
-rm -f ./*.o ./quux/*.o example
+rm -f ./*.o ./*.d ./quux/*.o ./quux/*.d example

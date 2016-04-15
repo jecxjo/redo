@@ -1,2 +1,4 @@
-redo-ifchange $2.c common.h
-gcc -c -o $3 $2.c
+redo-ifchange $2.c
+gcc -MD -MF $2.d -c -o $3 $2.c
+read DEPS <$2.d
+redo-ifchange ${DEPS#*:}
