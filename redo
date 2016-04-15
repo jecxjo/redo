@@ -1,0 +1,200 @@
+#!/bin/sh
+
+# An implementation of djb's redo, written in bourne shell since everyone has that
+# See cr.yp.to/redo.html for more about redo
+#
+# Written by Jeff Parent
+# Released as Public Domain
+# Version: 0.1.0
+# Date: Fri Apr 15 00:26:30 CDT 2016
+
+# Runtime Info
+PROGNAME=$(basename $0)
+TARGETS=$@
+METADIR=.redo
+
+# Log Messages :: 1:Level, 2:Msg
+function msg_() {
+  local level_="$1: "
+  shift
+  case "$level_" in
+    info*) level_=
+  esac
+  echo "${level_}$@" 1>&2
+  case "$level_" in
+    abort*) exit 111 ;;
+  esac
+}
+
+# Get Extension from file name :: 1:Filename -> Extension
+function GetExtension() {
+  target="$1"
+  ext=$(echo "$target" | sed 's/.*\.//')
+
+  if [ "$target" != "$ext" ]
+  then
+    echo "$ext"
+  fi
+}
+
+# Get the opposite of the extension :: 1:Filename -> Base File Name
+function GetBase() {
+  echo "$1" | sed 's/\(.*\)\..*/\1/'
+}
+
+# Clean old sums for a file :: 1:Dependency 2:Target
+function CleanSum() {
+  for f in $METADIR/$2/*
+  do
+    [ ! -e "$f" ] || [ "$(cat "$f")" != "$1" ] || rm "$f"
+  done
+}
+
+# Get sum for dep :: 1:Dependency 2:Target -> Sum
+function GetSum() {
+  for f in $METADIR/$2/*
+  do
+    if [ "$(cat "$f")" == "$1" ]
+    then
+      echo "$(basename "$f")"
+      return
+    fi
+  done
+}
+
+# Check if dep matches its sum :: 1:Dependency 2:Target -> true/false
+function UpToDate() {
+  local retVal="false"
+  local NEWSUM=$(md5sum "$1" | cut -f1 -d' ')
+  local OLDSUM=""
+
+  for f in $METADIR/$2/*
+  do
+    [ ! -e "$f" ] || [ "$(cat "$f")" != "$1" ] || OLDSUM="$(basename "$f")"
+  done
+
+  [ "$OLDSUM" != "$NEWSUM" ] || retVal="true"
+
+  echo "$retVal"
+}
+
+# Get the correct do file for target :: 1:Target -> Do File
+function DoPath() {
+  local target="$1"
+  if [ "$(GetExtension "$target")" == "do" ]
+  then
+    echo ""
+  elif [ -e "$target.do" ]
+  then
+    echo "$target.do"
+  elif [ -e "default.$(GetExtension "$target").do" ]
+  then
+    echo "default.$(GetExtension "$target").do"
+  fi
+}
+
+# Generate Checksum :: 1:Dependency 2:Target
+function GenSum() {
+  sum=$(md5sum "$1" 2>/dev/null | cut -f1 -d' ')
+  CleanSum "$1" "$2"
+  echo "$1" > "$METADIR/$2/$sum"
+}
+
+# Build target if it needs a redo :: 1:target
+function DoRedo() {
+  local target="$1"
+  local tmp="$target---redoing"
+  local doPath="$(DoPath "$target")"
+
+  [ -d "$METADIR/$target" ] || mkdir -p "$METADIR/$target"
+
+  if [ -z "$doPath" ]
+  then
+    if [ ! -e "$target" ]
+    then
+      msg_ "abort" "No .do file found for target: $target"
+    fi
+  else
+
+    local changes=0
+
+    # If do file changes
+    [ "$(UpToDate "$doPath" "$target")" == "true" ] || changes=1
+
+    # If target file does not exist
+    [ -e "$target" ] || changes=1
+
+    # If not triggering due to do file change (or lack of target)
+    # do loop and possible rebuild target
+    if [ $changes -ne 1 ]
+    then
+      for d in $METADIR/$target/*
+      do
+        dep="$(cat "$d")"
+        oldsum="$(basename "$d")"
+        REDO_TARGET="$target" redo-ifchange "$dep"
+
+        [ "$oldsum" == "$(GetSum "$dep" "$target")" ] || changes=1
+      done
+    fi
+
+    if [ $changes -eq 1 ]
+    then
+      msg_ "info" "redo $target"
+      GenSum "$doPath" "$target"
+      $(PATH=.:$PATH REDO_TARGET="$target" sh -e "$doPath" 0 $(GetBase "$target") "$tmp" > "$tmp")
+
+      RC=$?
+      if [ $RC -ne 0 ]
+      then
+        msg_ "error" "Redo script exited with a non-zero exit code: $RC"
+        rm "$tmp"
+        exit $RC
+      else
+        if [ "$(ls -s $tmp | cut -f1 -d' ')" == "0" ]
+        then
+          rm "$tmp"
+        else
+          mv "$tmp" "$target"
+        fi
+      fi
+    fi
+  fi
+}
+
+
+# Main
+case "$PROGNAME" in
+  redo-ifchange)
+    [ "$REDO_TARGET" != "" ] || msg_ "abort" "REDO_TARGET not set"
+
+    for target in $TARGETS
+    do
+      DoRedo $target
+      [ "$(UpToDate "$target" "$REDO_TARGET")" == "true" ] || GenSum "$target" "$REDO_TARGET"
+    done
+    ;;
+  redo-ifcreate)
+    [ "$REDO_TARGET" != "" ] || msg_ "abort" "REDO_TARGET not set"
+
+    for target in $TARGETS
+    do
+      [ ! -e "$target" ] || msg_ "abort" "$target exists but should be created"
+
+      DoRedo $target
+
+      if [ -e "$target" ]
+      then
+        GenSum "$target" "$REDO_TARGET"
+      fi
+
+    done
+    ;;
+  *)
+    for target in $TARGETS
+    do
+      REDO_TARGET=$target
+      DoRedo $target
+    done
+    ;;
+esac
