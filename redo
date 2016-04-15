@@ -14,7 +14,7 @@ TARGETS=$@
 METADIR=.redo
 
 # Log Messages :: 1:Level, 2:Msg
-function msg_() {
+msg_() {
   local level_="$1: "
   shift
   case "$level_" in
@@ -27,7 +27,7 @@ function msg_() {
 }
 
 # Get Extension from file name :: 1:Filename -> Extension
-function GetExtension() {
+GetExtension() {
   target="$1"
   ext=$(echo "$target" | sed 's/.*\.//')
 
@@ -38,12 +38,12 @@ function GetExtension() {
 }
 
 # Get the opposite of the extension :: 1:Filename -> Base File Name
-function GetBase() {
+GetBase() {
   echo "$1" | sed 's/\(.*\)\..*/\1/'
 }
 
 # Clean old sums for a file :: 1:Dependency 2:Target
-function CleanSum() {
+CleanSum() {
   for f in $METADIR/$2/*
   do
     [ ! -e "$f" ] || [ "$(cat "$f")" != "$1" ] || rm "$f"
@@ -51,12 +51,12 @@ function CleanSum() {
 }
 
 # Clean out all sums for a target :: 1:Target
-function CleanAll() {
+CleanAll() {
  [ ! -d $METADIR/$1 ] || rm -f $METADIR/$1/*
 }
 
 # Get sum for dep :: 1:Dependency 2:Target -> Sum
-function GetSum() {
+GetSum() {
   for f in $METADIR/$2/*
   do
     if [ "$(cat "$f")" == "$1" ]
@@ -68,7 +68,7 @@ function GetSum() {
 }
 
 # Check if dep matches its sum :: 1:Dependency 2:Target -> true/false
-function UpToDate() {
+UpToDate() {
   local retVal="false"
   local NEWSUM=$(md5sum "$1" | cut -f1 -d' ')
   local OLDSUM=""
@@ -84,7 +84,7 @@ function UpToDate() {
 }
 
 # Get the correct do file for target :: 1:Target -> Do File
-function DoPath() {
+DoPath() {
   local target="$1"
   if [ "$(GetExtension "$target")" == "do" ]
   then
@@ -99,14 +99,14 @@ function DoPath() {
 }
 
 # Generate Checksum :: 1:Dependency 2:Target
-function GenSum() {
+GenSum() {
   sum=$(md5sum "$1" 2>/dev/null | cut -f1 -d' ')
   CleanSum "$1" "$2"
   echo "$1" > "$METADIR/$2/$sum"
 }
 
 # Build target if it needs a redo :: 1:target
-function DoRedo() {
+DoRedo() {
   local target="$1"
   local tmp="$target---redoing"
   local doPath="$(DoPath "$target")"
