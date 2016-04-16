@@ -6,7 +6,7 @@
 
 BINDIR=/usr/local/bin
 
-which redo-ifchange 1>&2 2>/dev/null
+which redo-ifchange 1>/dev/null
 [ $? -ne 0 ] || redo-ifchange redo
 
 sudo install redo $BINDIR

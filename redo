@@ -5,22 +5,22 @@
 #
 # Written by Jeff Parent
 # Released as Public Domain
-# Version: 0.2.0
+# Version: 0.3.0
 # Date: Fri Apr 15 00:26:30 CDT 2016
 
 # Runtime Info
-PROGNAME=$(basename $0)
+PROGNAME=$(basename "$0")
 TARGETS=$@
 METADIR=.redo
 
 # Log Messages :: 1:Level, 2:Msg
 msg_() {
-  local level_="$1: "
+  level_="$1: "
   shift
   case "$level_" in
     info*) level_=
   esac
-  echo "${level_}$@" 1>&2
+  echo "${level_}$*" 1>&2
   case "$level_" in
     abort*) exit 111 ;;
   esac
@@ -43,25 +43,33 @@ GetBase() {
 }
 
 # Clean old sums for a file :: 1:Dependency 2:Target
-CleanSum() {
-  for f in $METADIR/$2/*
+CleanChangeSum() {
+  for a in $METADIR/$2/change/*
   do
-    [ ! -e "$f" ] || [ "$(cat "$f")" != "$1" ] || rm "$f"
+    [ ! -e "$a" ] || [ "$(cat "$a")" != "$1" ] || rm "$a"
+  done
+}
+
+CleanCreateSum() {
+  for b in $METADIR/$2/create/*
+  do
+    [ ! -e "$b" ] || [ "$(cat "$b")" != "$1" ] || rm "$b"
   done
 }
 
 # Clean out all sums for a target :: 1:Target
 CleanAll() {
- [ ! -d $METADIR/$1 ] || rm -f $METADIR/$1/*
+ [ ! -d "$METADIR/$1" ] || rm -rf "$METADIR/$1/*"
 }
 
 # Get sum for dep :: 1:Dependency 2:Target -> Sum
-GetSum() {
-  for f in $METADIR/$2/*
+GetChangeSum() {
+  for c in $METADIR/$2/change/*
   do
-    if [ "$(cat "$f")" == "$1" ]
+    [ "$c" != "" ] || return
+    if [ "$(cat "$c")" = "$1" ]
     then
-      echo "$(basename "$f")"
+      basename "$c"
       return
     fi
   done
@@ -69,13 +77,13 @@ GetSum() {
 
 # Check if dep matches its sum :: 1:Dependency 2:Target -> true/false
 UpToDate() {
-  local retVal="false"
-  local NEWSUM=$(md5sum "$1" | cut -f1 -d' ')
-  local OLDSUM=""
+  retVal="false"
+  NEWSUM=$(md5sum "$1" | cut -f1 -d' ')
+  OLDSUM=""
 
-  for f in $METADIR/$2/*
+  for d in $METADIR/$2/change/*
   do
-    [ ! -e "$f" ] || [ "$(cat "$f")" != "$1" ] || OLDSUM="$(basename "$f")"
+    [ ! -e "$d" ] || [ "$(cat "$d")" != "$1" ] || OLDSUM="$(basename "$d")"
   done
 
   [ "$OLDSUM" != "$NEWSUM" ] || retVal="true"
@@ -85,8 +93,8 @@ UpToDate() {
 
 # Get the correct do file for target :: 1:Target -> Do File
 DoPath() {
-  local target="$1"
-  if [ "$(GetExtension "$target")" == "do" ]
+  target="$1"
+  if [ "$(GetExtension "$target")" = "do" ]
   then
     echo ""
   elif [ -e "$target.do" ]
@@ -99,19 +107,26 @@ DoPath() {
 }
 
 # Generate Checksum :: 1:Dependency 2:Target
-GenSum() {
+GenChangeSum() {
   sum=$(md5sum "$1" 2>/dev/null | cut -f1 -d' ')
-  CleanSum "$1" "$2"
-  echo "$1" > "$METADIR/$2/$sum"
+  CleanChangeSum "$1" "$2"
+  echo "$1" > "$METADIR/$2/change/$sum"
+}
+
+GenCreateSum() {
+  sum=$(md5sum "$1" 2>/dev/null | cut -f1 -d' ')
+  CleanCreateSum "$1" "$2"
+  echo "$1" > "$METADIR/$2/create/$sum"
 }
 
 # Build target if it needs a redo :: 1:target
 DoRedo() {
-  local target="$1"
-  local tmp="$target---redoing"
-  local doPath="$(DoPath "$target")"
+  target="$1"
+  tmp="$target---redoing"
+  doPath="$(DoPath "$target")"
 
-  [ -d "$METADIR/$target" ] || mkdir -p "$METADIR/$target"
+  [ -d "$METADIR/$target/change" ] || mkdir -p "$METADIR/$target/change/"
+  [ -d "$METADIR/$target/create" ] || mkdir -p "$METADIR/$target/create/"
 
   if [ -z "$doPath" ]
   then
@@ -121,34 +136,54 @@ DoRedo() {
     fi
   else
 
-    local changes=0
+    trigger=0
 
     # If do file changes
-    [ "$(UpToDate "$doPath" "$target")" == "true" ] || changes=1
+    [ "$(UpToDate "$doPath" "$target")" = "true" ] || trigger=1
 
     # If target file does not exist
-    [ -e "$target" ] || changes=1
+    [ -e "$target" ] || trigger=1
 
-    # If not triggering due to do file change (or lack of target)
-    # do loop and possible rebuild target
-    if [ $changes -ne 1 ]
+    # Check if any creates exist
+    if [ $trigger -ne 1 ]
     then
-      for d in $METADIR/$target/*
+      for e in $METADIR/$target/create/*
       do
-        dep="$(cat "$d")"
-        oldsum="$(basename "$d")"
-        REDO_TARGET="$target" redo-ifchange "$dep"
-
-        [ "$oldsum" == "$(GetSum "$dep" "$target")" ] || changes=1
+        if [ -e "$e" ]
+        then
+          dep="$(cat "$e")"
+          if [ -e "$dep" ]
+          then
+            msg_ "abort" "$dep exists but should be created"
+          else
+            trigger=1
+          fi
+        fi
       done
     fi
 
-    if [ $changes -eq 1 ]
+    # If not triggering due to do file change (or lack of target)
+    # do loop and possible rebuild target
+    if [ $trigger -ne 1 ]
+    then
+      for f in $METADIR/$target/change/*
+      do
+        if [ -e "$f" ]
+        then
+          dep="$(cat "$f")"
+          oldsum="$(basename "$f")"
+          REDO_TARGET="$target" redo-ifchange "$dep"
+          [ "$oldsum" = "$(GetChangeSum "$dep" "$target")" ] || trigger=1
+        fi
+      done
+    fi
+
+    if [ $trigger -eq 1 ]
     then
       msg_ "info" "redo $target"
       CleanAll "$target"
-      GenSum "$doPath" "$target"
-      $(PATH=.:$PATH REDO_TARGET="$target" sh -e "$doPath" 0 $(GetBase "$target") "$tmp" > "$tmp")
+      GenChangeSum "$doPath" "$target"
+      PATH=.:$PATH REDO_TARGET="$target" sh -e "$doPath" 0 "$(GetBase "$target")" "$tmp" > "$tmp"
 
       RC=$?
       if [ $RC -ne 0 ]
@@ -157,7 +192,7 @@ DoRedo() {
         rm "$tmp"
         exit $RC
       else
-        if [ "$(ls -s $tmp | cut -f1 -d' ')" == "0" ]
+        if [ "$(ls -s "$tmp" | cut -f1 -d' ')" = "0" ]
         then
           rm "$tmp"
         else
@@ -176,8 +211,8 @@ case "$PROGNAME" in
 
     for target in $TARGETS
     do
-      DoRedo $target
-      [ "$(UpToDate "$target" "$REDO_TARGET")" == "true" ] || GenSum "$target" "$REDO_TARGET"
+      DoRedo "$target"
+      [ "$(UpToDate "$target" "$REDO_TARGET")" = "true" ] || GenChangeSum "$target" "$REDO_TARGET"
     done
     ;;
   redo-ifcreate)
@@ -187,20 +222,16 @@ case "$PROGNAME" in
     do
       [ ! -e "$target" ] || msg_ "abort" "$target exists but should be created"
 
-      DoRedo $target
+      DoRedo "$target"
 
-      if [ -e "$target" ]
-      then
-        GenSum "$target" "$REDO_TARGET"
-      fi
-
+      [ ! -e "$target" ] || GenCreateSum "$target" "$REDO_TARGET"
     done
     ;;
   *)
     for target in $TARGETS
     do
-      REDO_TARGET=$target
-      DoRedo $target
+      REDO_TARGET="$target"
+      DoRedo "$target"
     done
     ;;
 esac
