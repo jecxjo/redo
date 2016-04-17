@@ -5,7 +5,7 @@
 #
 # Written by Jeff Parent
 # Released as Public Domain
-# Version: 0.3.1
+# Version: 0.3.2
 # Date: Fri Apr 15 00:26:30 CDT 2016
 
 # Runtime Info
@@ -100,9 +100,9 @@ DoPath() {
   elif [ -e "$target.do" ]
   then
     echo "$target.do"
-  elif [ -e "default.$(GetExtension "$target").do" ]
+  elif [ -e "$(dirname "$target")/default.$(GetExtension "$target").do" ]
   then
-    echo "default.$(GetExtension "$target").do"
+    echo "$(dirname "$target")/default.$(GetExtension "$target").do"
   fi
 }
 
